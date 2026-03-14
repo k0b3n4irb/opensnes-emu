@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "opensnes-emu": {
+            "command": "node",
+            "args": ["tools/opensnes-emu/dist/server/mcp-server.js"],
+            "env": {
+                "EMU_ROM_DIR": "${OPENSNES_HOME:-./}/examples"
+            }
+        }
+    }
+}

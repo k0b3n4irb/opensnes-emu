@@ -1,0 +1,30 @@
+{
+  "name": "opensnes-emu",
+  "version": "0.1.0",
+  "description": "SNES debug emulator with MCP server for OpenSNES SDK",
+  "type": "module",
+  "scripts": {
+    "build:core": "make -C core",
+    "build:ts": "tsc",
+    "build": "npm run build:core && npm run build:ts",
+    "start": "node dist/server/mcp-server.js",
+    "dev:web": "vite web",
+    "clean": "make -C core clean && rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@types/node": "^22.0.0",
+    "canvas": "^3.1.0",
+    "pngjs": "^7.0.0",
+    "pixelmatch": "^6.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

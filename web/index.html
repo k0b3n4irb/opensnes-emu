@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSNES Debug Emulator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>OpenSNES Debug Emulator</h1>
+            <div id="controls">
+                <input type="file" id="rom-input" accept=".sfc,.smc" />
+                <button id="btn-run" disabled>Run</button>
+                <button id="btn-pause" disabled>Pause</button>
+                <button id="btn-step" disabled>Step</button>
+                <button id="btn-reset" disabled>Reset</button>
+                <span id="status">No ROM loaded</span>
+            </div>
+        </header>
+
+        <main>
+            <section id="screen-section">
+                <canvas id="screen" width="512" height="448"></canvas>
+            </section>
+
+            <section id="debug-section">
+                <div id="tab-bar">
+                    <button class="tab active" data-panel="registers">Registers</button>
+                    <button class="tab" data-panel="palette">Palette</button>
+                    <button class="tab" data-panel="oam">OAM</button>
+                    <button class="tab" data-panel="vram">VRAM</button>
+                    <button class="tab" data-panel="memory">Memory</button>
+                </div>
+
+                <div id="panel-registers" class="panel active">
+                    <h3>CPU Registers</h3>
+                    <pre id="cpu-state">--</pre>
+                    <h3>PPU State</h3>
+                    <pre id="ppu-state">--</pre>
+                </div>
+
+                <div id="panel-palette" class="panel">
+                    <h3>CGRAM Palette</h3>
+                    <div id="palette-grid"></div>
+                </div>
+
+                <div id="panel-oam" class="panel">
+                    <h3>OAM Sprites</h3>
+                    <table id="oam-table">
+                        <thead>
+                            <tr><th>#</th><th>X</th><th>Y</th><th>Tile</th><th>Pal</th><th>Pri</th><th>Size</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="panel-vram" class="panel">
+                    <h3>VRAM Tiles</h3>
+                    <div>
+                        <label>BPP: <select id="vram-bpp"><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option></select></label>
+                        <label>Palette: <select id="vram-palette"></select></label>
+                    </div>
+                    <canvas id="vram-canvas" width="256" height="512"></canvas>
+                </div>
+
+                <div id="panel-memory" class="panel">
+                    <h3>Memory Viewer</h3>
+                    <div>
+                        <label>Region: <select id="mem-region">
+                            <option value="wram">WRAM</option>
+                            <option value="vram">VRAM</option>
+                        </select></label>
+                        <label>Address: <input type="text" id="mem-address" value="0000" size="6" /></label>
+                        <button id="mem-go">Go</button>
+                    </div>
+                    <pre id="mem-hex"></pre>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="app.ts"></script>
+</body>
+</html>
