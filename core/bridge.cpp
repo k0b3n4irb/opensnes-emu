@@ -179,6 +179,17 @@ uint8_t bridge_get_forced_blanking(void) { return PPU.ForcedBlanking; }
 EMSCRIPTEN_KEEPALIVE
 uint16_t bridge_get_screen_height(void) { return PPU.ScreenHeight; }
 
+/* ── CPU Cycle Counter ────────────────────────────────────────── */
+
+EMSCRIPTEN_KEEPALIVE
+int32_t bridge_get_cycles(void) { return CPU.Cycles; }
+
+EMSCRIPTEN_KEEPALIVE
+int32_t bridge_get_v_counter(void) { return CPU.V_Counter; }
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t bridge_get_wai_state(void) { return CPU.WaitingForInterrupt ? 1 : 0; }
+
 /* ── Framebuffer Access ───────────────────────────────────────── */
 
 EMSCRIPTEN_KEEPALIVE

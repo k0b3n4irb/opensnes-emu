@@ -117,41 +117,28 @@ function phase1_preconditions() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PHASE 2: COMPILER TESTS (delegate to existing script)
+// PHASE 2: COMPILER TESTS (native JS — no bash dependency)
 // ═══════════════════════════════════════════════════════════════════
 
-function phase2_compiler() {
+async function phase2_compiler() {
     startPhase('Compiler Tests');
 
-    const script = join(OPENSNES, 'tests', 'compiler', 'run_tests.sh');
-    if (!existsSync(script)) {
-        check('run_tests.sh exists', false, 'Script not found');
-        phaseResult();
-        return;
-    }
+    try {
+        const { runCompilerTests } = await import('./phases/compiler-tests.mjs');
+        const result = runCompilerTests(OPENSNES, {
+            verbose: VERBOSE,
+            allowKnownBugs: ALLOW_KNOWN_BUGS,
+        });
 
-    const flags = ALLOW_KNOWN_BUGS ? '--allow-known-bugs' : '';
-    const result = sh(`bash ${script} ${flags}`, { timeout: 300000 });
-
-    if (typeof result === 'object' && result.error) {
-        // Parse output to extract counts
-        const output = result.stdout || '';
-        const match = output.match(/Results:\s*(\d+)\/(\d+)\s*passed/);
-        if (match) {
-            const [, passed, total] = match;
-            check(`compiler tests`, false, `${passed}/${total} passed`);
-        } else {
-            check('compiler tests', false, 'Script failed');
+        for (const t of result.results) {
+            if (t.passed) {
+                check(t.name, true);
+            } else {
+                check(t.name, false, t.message);
+            }
         }
-    } else {
-        // Success — parse result line
-        const match = (result || '').match(/Results:\s*(\d+)\/(\d+)\s*passed/);
-        if (match) {
-            const [, passed, total] = match;
-            check(`compiler tests (${passed}/${total})`, parseInt(passed) === parseInt(total));
-        } else {
-            check('compiler tests', true);
-        }
+    } catch (e) {
+        check('compiler tests', false, String(e));
     }
 
     phaseResult();
@@ -448,7 +435,7 @@ async function main() {
     if (shouldRun('preconditions')) phase1_preconditions();
 
     // Phase 2: compiler tests (skip in quick mode)
-    if (!QUICK && shouldRun('compiler')) phase2_compiler();
+    if (!QUICK && shouldRun('compiler')) await phase2_compiler();
 
     // Phase 3: build (skip in quick mode)
     if (!QUICK && shouldRun('build')) phase3_build();

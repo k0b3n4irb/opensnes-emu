@@ -51,6 +51,9 @@ BRIDGE_EXPORTS := \
 	_bridge_get_brightness \
 	_bridge_get_forced_blanking \
 	_bridge_get_screen_height \
+	_bridge_get_cycles \
+	_bridge_get_v_counter \
+	_bridge_get_wai_state \
 	_bridge_get_framebuffer \
 	_bridge_get_fb_width \
 	_bridge_get_fb_height \
