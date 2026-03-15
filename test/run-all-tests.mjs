@@ -382,19 +382,19 @@ async function phase5_runtime() {
             const forcedBlank = core._bridge_get_forced_blanking();
             const screenOn = !forcedBlank && brightness > 0;
 
-            // Check: CPU is alive (PC changes between frames)
-            const pc1 = core._bridge_get_pc();
-            runFrames(5);
-            const pc2 = core._bridge_get_pc();
-            const cpuAlive = pc1 !== pc2 || pc1 === pc2; // main loop might WAI at same PC
+            // Check: DMA channel 7 still configured for OAM
+            // (catches the bug where game code clobbers channel 7 registers)
+            const oamDmaOk = core._bridge_validate_oam_dma ? core._bridge_validate_oam_dma() : 1;
 
             core._retro_unload_game();
 
-            if (screenOn) {
+            if (screenOn && oamDmaOk) {
                 check(`boot/${label}`, true);
-            } else {
-                // Some examples legitimately have screen off (audio-only, input wait)
+            } else if (!screenOn) {
                 warn(`boot/${label}`, `screen off (brightness=${brightness}, blank=${forcedBlank})`);
+            } else if (!oamDmaOk) {
+                // Read DMA ch7 registers for diagnostics
+                check(`boot/${label}`, false, 'DMA channel 7 clobbered — OAM DMA will fail on real hardware');
             }
         }
     }
@@ -496,6 +496,28 @@ async function phase7_lagcheck() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PHASE 8: INPUT SEQUENCE TESTS
+// ═══════════════════════════════════════════════════════════════════
+
+async function phase8_sequences() {
+    startPhase('Input Sequence Tests');
+
+    try {
+        await initEmulator();
+        const { runInputSequences } = await import('./phases/input-sequences.mjs');
+        const result = runInputSequences(core, OPENSNES, { verbose: VERBOSE });
+
+        for (const r of result.results) {
+            check(`seq/${r.name}`, r.passed, r.message);
+        }
+    } catch (e) {
+        check('input sequences', false, String(e));
+    }
+
+    phaseResult();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -558,6 +580,9 @@ async function main() {
 
     // Phase 7: lag frame detection
     if (shouldRun('lagcheck')) await phase7_lagcheck();
+
+    // Phase 8: input sequence tests
+    if (shouldRun('sequences')) await phase8_sequences();
 
     // ── Summary ──
 

@@ -27,6 +27,7 @@
 #include "65c816.h"
 #include "ppu.h"
 #include "memmap.h"
+#include "dma.h"
 
 /*
  * These are the snes9x global variables we access:
@@ -189,6 +190,65 @@ int32_t bridge_get_v_counter(void) { return CPU.V_Counter; }
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t bridge_get_wai_state(void) { return CPU.WaitingForInterrupt ? 1 : 0; }
+
+/* ── DMA Channel State ────────────────────────────────────────── */
+
+/**
+ * Read DMA channel register.
+ * channel: 0-7, reg: offset within channel (matches $43x0-$43xA layout)
+ *   0: TransferMode | ReverseTransfer | HDMAIndirectAddressing | AAddressFixed | AAddressDecrement
+ *   1: BAddress (B-bus destination)
+ *   2: AAddress low
+ *   3: AAddress high
+ *   4: ABank
+ *   5: DMACount/IndirectAddress low
+ *   6: DMACount/IndirectAddress high
+ *   7: IndirectBank
+ *   8: HDMA Address low
+ *   9: HDMA Address high
+ *   10: HDMA LineCount/Repeat
+ */
+EMSCRIPTEN_KEEPALIVE
+uint8_t bridge_read_dma_reg(uint8_t channel, uint8_t reg) {
+    if (channel >= 8) return 0;
+    struct SDMA *d = &DMA[channel];
+    switch (reg) {
+        case 0: {
+            uint8_t v = d->TransferMode & 0x07;
+            if (d->AAddressFixed)          v |= 0x08;
+            if (d->AAddressDecrement)      v |= 0x10;
+            if (d->HDMAIndirectAddressing) v |= 0x40;
+            if (d->ReverseTransfer)        v |= 0x80;
+            return v;
+        }
+        case 1: return d->BAddress;
+        case 2: return (uint8_t)(d->AAddress & 0xFF);
+        case 3: return (uint8_t)(d->AAddress >> 8);
+        case 4: return d->ABank;
+        case 5: return (uint8_t)(d->DMACount_Or_HDMAIndirectAddress & 0xFF);
+        case 6: return (uint8_t)(d->DMACount_Or_HDMAIndirectAddress >> 8);
+        case 7: return d->IndirectBank;
+        case 8: return (uint8_t)(d->Address & 0xFF);
+        case 9: return (uint8_t)(d->Address >> 8);
+        case 10: return d->LineCount | (d->Repeat ? 0x80 : 0);
+        default: return 0;
+    }
+}
+
+/**
+ * Validate DMA channel 7 is configured for OAM transfer.
+ * Returns 1 if channel 7 looks correct for OAM DMA, 0 otherwise.
+ * This catches the bug where other DMA operations clobber channel 7.
+ */
+EMSCRIPTEN_KEEPALIVE
+uint8_t bridge_validate_oam_dma(void) {
+    struct SDMA *d = &DMA[7];
+    /* Expected: mode=0 (1-byte), dest=$04 (OAMDATA), bank=$7E */
+    if (d->TransferMode != 0) return 0;
+    if (d->BAddress != 0x04) return 0;
+    if (d->ABank != 0x7E) return 0;
+    return 1;
+}
 
 /* ── Framebuffer Access ───────────────────────────────────────── */
 
