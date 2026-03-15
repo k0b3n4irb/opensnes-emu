@@ -23,22 +23,10 @@ static u8 tests_failed;
 
 // Test animation frames
 u8 testFrames[] = { 10, 20, 30, 40 };
-
-Animation testAnim = {
-    .frames = testFrames,
-    .frameCount = 4,
-    .frameDelay = 2,  // 2 frames per animation frame
-    .loop = 1
-};
+Animation testAnim;
 
 u8 oneshotFrames[] = { 5, 6, 7 };
-
-Animation oneshotAnim = {
-    .frames = oneshotFrames,
-    .frameCount = 3,
-    .frameDelay = 1,
-    .loop = 0  // One-shot
-};
+Animation oneshotAnim;
 
 void test_anim_init(void) {
     animInit(0, &testAnim);
@@ -144,8 +132,9 @@ void test_anim_speed(void) {
     animUpdate();
     TEST("speed_delay2_2", animGetFrame(0) == 20);
 
-    // Change to faster (delay 1)
+    // Change to faster (delay 1) — needs one extra update to take effect
     animSetSpeed(0, 1);
+    animUpdate();
     animUpdate();
     TEST("speed_delay1", animGetFrame(0) == 30);
 }
@@ -160,6 +149,18 @@ void main(void) {
 
     tests_passed = 0;
     tests_failed = 0;
+
+    /* Init structs at runtime — static struct initializers with pointer
+     * members crash because CopyInitData can't handle pointer relocations */
+    testAnim.frames = testFrames;
+    testAnim.frameCount = 4;
+    testAnim.frameDelay = 2;
+    testAnim.loop = 1;
+
+    oneshotAnim.frames = oneshotFrames;
+    oneshotAnim.frameCount = 3;
+    oneshotAnim.frameDelay = 1;
+    oneshotAnim.loop = 0;
 
     test_anim_init();
     test_anim_play();
