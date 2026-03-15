@@ -118,9 +118,14 @@ BRIDGE_INCLUDES := -I$(SNES9X_DIR) -I$(CORE_DIR)
 
 all: $(JS_OUT)
 
+# Step 0: Clone snes9x if not present
+$(SNES9X_DIR):
+	@echo "=== Cloning snes9x ==="
+	git clone --depth 1 https://github.com/snes9xgit/snes9x.git $(SNES9X_DIR)
+
 # Step 1: Build snes9x libretro core as static library (.bc or .a)
 # The Makefile with platform=emscripten produces a .bc file
-core:
+core: $(SNES9X_DIR)
 	@echo "=== Building snes9x libretro core ==="
 	cd $(CORE_DIR) && emmake make -f Makefile platform=emscripten \
 		STATIC_LINKING=1 \
