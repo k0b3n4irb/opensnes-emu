@@ -18,8 +18,12 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OPENSNES = join(__dirname, '..', '..', '..');
-const BENCH_SRC = join(OPENSNES, 'tests', 'benchmark', 'bench_functions.c');
-const BENCH_BASELINE = join(OPENSNES, 'tests', 'benchmark', 'bench_functions.asm');
+// Benchmark sources: fixtures first, fallback to legacy tests/
+const BENCH_FIXTURES = join(__dirname, 'fixtures', 'benchmark');
+const BENCH_LEGACY = join(OPENSNES, 'tests', 'benchmark');
+const BENCH_HOME = existsSync(BENCH_FIXTURES) ? BENCH_FIXTURES : BENCH_LEGACY;
+const BENCH_SRC = join(BENCH_HOME, 'bench_functions.c');
+const BENCH_BASELINE = join(BENCH_HOME, 'bench_functions.asm');
 const CC = join(OPENSNES, 'bin', 'cc65816');
 const CYCLECOUNT = join(OPENSNES, 'devtools', 'cyclecount', 'cyclecount.py');
 const TMP_ASM = '/tmp/opensnes_bench_current.asm';

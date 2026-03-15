@@ -25,6 +25,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const EMU_ROOT = join(__dirname, '..');
 const OPENSNES = resolve(join(__dirname, '..', '..', '..'));
 
+// Unit test sources: opensnes-emu fixtures first, fallback to legacy tests/
+const UNIT_FIXTURES = join(__dirname, 'fixtures', 'unit');
+const UNIT_LEGACY = join(OPENSNES, 'tests', 'unit');
+const UNIT_DIR = existsSync(UNIT_FIXTURES) ? UNIT_FIXTURES : UNIT_LEGACY;
+
+// Benchmark sources
+const BENCH_FIXTURES = join(__dirname, 'fixtures', 'benchmark');
+const BENCH_LEGACY = join(OPENSNES, 'tests', 'benchmark');
+const BENCH_DIR = existsSync(BENCH_FIXTURES) ? BENCH_FIXTURES : BENCH_LEGACY;
+
 // ── CLI Parsing ─────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -34,6 +44,7 @@ const PHASE_FILTER = args.includes('--phase') ? args[args.indexOf('--phase') + 1
 const JSON_OUTPUT = args.includes('--json');
 const UNIT_ONLY = args.includes('--unit-only');
 const ALLOW_KNOWN_BUGS = args.includes('--allow-known-bugs');
+const UPDATE_BASELINES = args.includes('--update-baselines');
 
 // ── Colors ──────────────────────────────────────────────────────────
 
@@ -152,7 +163,7 @@ function phase3_build() {
     startPhase('Build');
 
     // Build unit tests
-    const unitDir = join(OPENSNES, 'tests', 'unit');
+    const unitDir = UNIT_DIR;
     let unitCount = 0;
     for (const name of readdirSync(unitDir).filter(f => {
         try { return statSync(join(unitDir, f)).isDirectory(); } catch { return false; }
@@ -160,7 +171,8 @@ function phase3_build() {
         const dir = join(unitDir, name);
         if (!existsSync(join(dir, 'Makefile'))) continue;
 
-        const result = sh(`make -C ${dir}`, { timeout: 60000 });
+        const env = { ...process.env, OPENSNES };
+        const result = sh(`make -C ${dir}`, { timeout: 60000, env });
         const passed = typeof result === 'string';
         check(`unit/${name}`, passed, passed ? '' : 'build failed');
         unitCount++;
@@ -191,7 +203,7 @@ function phase4_static() {
     const allDirs = [];
 
     // Collect unit test dirs
-    const unitDir = join(OPENSNES, 'tests', 'unit');
+    const unitDir = UNIT_DIR;
     for (const name of readdirSync(unitDir).filter(f => {
         try { return statSync(join(unitDir, f)).isDirectory(); } catch { return false; }
     }).sort()) {
@@ -264,7 +276,9 @@ async function initEmulator() {
         if (cmd === 3) { core.setValue(data, 1, 'i8'); return 1; }
         return 0;
     }, 'iii'));
-    core._retro_set_video_refresh(core.addFunction(() => {}, 'viiii'));
+    core._retro_set_video_refresh(core.addFunction((dataPtr, width, height, pitch) => {
+        if (dataPtr) core._bridge_set_framebuffer(dataPtr, width, height, pitch);
+    }, 'viiii'));
     core._retro_set_audio_sample(core.addFunction(() => {}, 'vii'));
     core._retro_set_audio_sample_batch(core.addFunction((d, f) => f, 'iii'));
     core._retro_set_input_poll(core.addFunction(() => {}, 'v'));
@@ -301,7 +315,7 @@ async function phase5_runtime() {
 
     // ── Unit tests: read tests_passed / tests_failed from WRAM ──
 
-    const unitDir = join(OPENSNES, 'tests', 'unit');
+    const unitDir = UNIT_DIR;
     for (const name of readdirSync(unitDir).filter(f => {
         try { return statSync(join(unitDir, f)).isDirectory(); } catch { return false; }
     }).sort()) {
@@ -389,6 +403,97 @@ async function phase5_runtime() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PHASE 6: VISUAL REGRESSION
+// ═══════════════════════════════════════════════════════════════════
+
+async function phase6_visual() {
+    startPhase('Visual Regression');
+
+    try {
+        await initEmulator();
+        const { runVisualRegression } = await import('./phases/visual-regression.mjs');
+        const result = runVisualRegression(core, OPENSNES, {
+            update: UPDATE_BASELINES,
+            verbose: VERBOSE,
+            maxDiffPixels: 50,
+        });
+
+        if (UPDATE_BASELINES) {
+            console.log(`  Baselines updated: ${result.updated} examples`);
+        }
+
+        for (const r of result.results) {
+            if (r.message === 'no baseline (skipped)') {
+                skip(`visual/${r.label}`, 'no baseline');
+            } else {
+                check(`visual/${r.label}`, r.passed, r.message);
+            }
+        }
+    } catch (e) {
+        check('visual regression', false, String(e));
+    }
+
+    phaseResult();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 7: LAG FRAME DETECTION
+// ═══════════════════════════════════════════════════════════════════
+
+async function phase7_lagcheck() {
+    startPhase('Lag Frame Detection');
+
+    try {
+        await initEmulator();
+    } catch (e) {
+        check('emulator init', false, String(e));
+        phaseResult();
+        return;
+    }
+
+    for (const dir of findExampleDirs()) {
+        const label = dir.slice(join(OPENSNES, 'examples').length + 1);
+        const sfcFiles = readdirSync(dir).filter(f => f.endsWith('.sfc'));
+        if (sfcFiles.length === 0) continue;
+
+        const symFiles = readdirSync(dir).filter(f => f.endsWith('.sym'));
+        if (symFiles.length === 0) { skip(`lag/${label}`, 'no .sym'); continue; }
+
+        const sym = readFileSync(join(dir, symFiles[0]), 'utf-8');
+        const lagMatch = sym.match(/^([0-9a-f]{2}:[0-9a-f]{4})\s+lag_frame_counter$/m);
+        if (!lagMatch) { skip(`lag/${label}`, 'no lag_frame_counter symbol'); continue; }
+
+        const lagAddr = parseInt(lagMatch[1].split(':')[1], 16);
+
+        if (!loadROM(join(dir, sfcFiles[0]))) {
+            check(`lag/${label}`, false, 'ROM load failed');
+            continue;
+        }
+
+        // Run 300 frames (5 seconds) and check lag counter
+        runFrames(300);
+
+        // Read lag_frame_counter (16-bit)
+        const lagLo = core._bridge_read_wram(lagAddr);
+        const lagHi = core._bridge_read_wram(lagAddr + 1);
+        const lagFrames = lagLo | (lagHi << 8);
+
+        core._retro_unload_game();
+
+        // Tolerate ≤ 5 lag frames (init startup can cause 1-2)
+        const maxLag = 5;
+        if (lagFrames <= maxLag) {
+            check(`lag/${label}`, true, `${lagFrames} lag / 300`);
+        } else {
+            const pct = Math.round(lagFrames * 100 / 300);
+            check(`lag/${label}`, false, `${lagFrames} lag frames / 300 (${pct}%) — exceeds threshold ${maxLag}`);
+        }
+    }
+
+    phaseResult();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -445,6 +550,12 @@ async function main() {
 
     // Phase 5: runtime
     if (shouldRun('runtime')) await phase5_runtime();
+
+    // Phase 6: visual regression
+    if (shouldRun('visual')) await phase6_visual();
+
+    // Phase 7: lag frame detection
+    if (shouldRun('lagcheck')) await phase7_lagcheck();
 
     // ── Summary ──
 

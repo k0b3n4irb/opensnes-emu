@@ -14,7 +14,8 @@
  */
 
 import { existsSync, readFileSync, readdirSync, mkdirSync, rmSync, writeFileSync, statSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { platform } from 'node:os';
 
@@ -176,7 +177,10 @@ export function runCompilerTests(opensnesDir, options = {}) {
     const BIN = join(opensnesDir, 'bin');
     const CC = join(BIN, 'cc65816');
     const AS = join(BIN, 'wla-65816');
-    const SCRIPT_DIR = join(opensnesDir, 'tests', 'compiler');
+    // Look for test sources: first in opensnes-emu fixtures, fallback to tests/
+    const EMU_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'compiler');
+    const LEGACY_DIR = join(opensnesDir, 'tests', 'compiler');
+    const SCRIPT_DIR = existsSync(EMU_FIXTURES) ? EMU_FIXTURES : LEGACY_DIR;
     const BUILD = '/tmp/opensnes-compiler-tests';
 
     // Clean & create build dir
