@@ -470,13 +470,15 @@ async function phase7_lagcheck() {
             continue;
         }
 
-        // Run 300 frames (5 seconds) and check lag counter
+        // Run 120 frames warmup (init lag), then reset counter and measure 300 steady-state frames
+        runFrames(120);
+
+        // Reset lag counter by noting its value, then measuring delta
+        const lagBefore = core._bridge_read_wram(lagAddr) | (core._bridge_read_wram(lagAddr + 1) << 8);
         runFrames(300);
 
-        // Read lag_frame_counter (16-bit)
-        const lagLo = core._bridge_read_wram(lagAddr);
-        const lagHi = core._bridge_read_wram(lagAddr + 1);
-        const lagFrames = lagLo | (lagHi << 8);
+        const lagAfter = core._bridge_read_wram(lagAddr) | (core._bridge_read_wram(lagAddr + 1) << 8);
+        const lagFrames = lagAfter - lagBefore;
 
         core._retro_unload_game();
 
