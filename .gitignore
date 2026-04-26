@@ -12,4 +12,5 @@ test/fixtures/**/*.o
 test/fixtures/**/*.obj
 test/fixtures/**/*.asm
 test/fixtures/**/*.h
+test/fixtures/**/*.inc
 test/fixtures/**/linkfile
