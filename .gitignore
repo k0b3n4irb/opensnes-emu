@@ -4,3 +4,12 @@ core/build/
 core/snes9x/
 roms/
 *.tsbuildinfo
+
+# Generated test fixture artifacts (rebuilt by `make` from each fixture's source)
+test/fixtures/**/*.sfc
+test/fixtures/**/*.sym
+test/fixtures/**/*.o
+test/fixtures/**/*.obj
+test/fixtures/**/*.asm
+test/fixtures/**/*.h
+test/fixtures/**/linkfile
