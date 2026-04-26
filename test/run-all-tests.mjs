@@ -171,7 +171,11 @@ function phase3_build() {
         const dir = join(unitDir, name);
         if (!existsSync(join(dir, 'Makefile'))) continue;
 
-        const env = { ...process.env, OPENSNES };
+        // Test fixtures intentionally exercise unused-variable / shift-of-
+        // negative-int / etc. patterns to verify the compiler's optimisation
+        // passes. SKIP_LINT=1 disables the clang -Werror check that
+        // make/common.mk applies to user code; the fixtures are not user code.
+        const env = { ...process.env, OPENSNES, SKIP_LINT: '1' };
         const result = sh(`make -C ${dir}`, { timeout: 60000, env });
         const passed = typeof result === 'string';
         check(`unit/${name}`, passed, passed ? '' : 'build failed');
