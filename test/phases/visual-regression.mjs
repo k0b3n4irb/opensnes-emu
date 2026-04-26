@@ -2,22 +2,71 @@
  * Visual Regression Testing
  *
  * Captures screenshots of all examples and compares against stored baselines.
- * Any pixel difference = regression detected.
+ * Any pixel difference > tolerance = regression detected.
  *
  * Usage:
  *   import { runVisualRegression } from './visual-regression.mjs';
- *   const result = runVisualRegression(opensnesDir, emuCore, { update: false });
+ *   const result = runVisualRegression(emuCore, opensnesDir, { update: false });
  *
- * Baselines stored as raw RGBA in test/baselines/<example_path>.bin
- * (not PNG — avoids compression differences, exact pixel match)
+ * Baseline files (per example, in test/baselines/):
+ *   <label>.bin   — raw RGBA framebuffer (no compression, exact match)
+ *   <label>.meta  — JSON manifest with provenance:
+ *     {
+ *       "width": 256, "height": 224, "frames": 120,
+ *       "rom_sha256": "<hex>",         // SHA-256 of the .sfc captured
+ *       "snes9x_commit": "5110899",    // git short SHA of snes9x at capture time
+ *       "captured_at": "2026-04-26T18:34:00.000Z"
+ *     }
+ *
+ * Drift signals:
+ *   - rom_sha256 mismatch  → ROM was rebuilt; baseline may be stale
+ *   - snes9x_commit mismatch → emulator changed; pixel differences expected
+ *   Both are reported as warnings, the test still runs.
+ *
+ * Regenerate a baseline:
+ *   node test/run-all-tests.mjs --phase visual --update-baselines
+ *   (then commit the .bin/.meta pair after Mesen2 validation)
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASELINES_DIR = join(__dirname, '..', 'baselines');
+
+/**
+ * Read snes9x git short SHA from core/snes9x/.git, or 'unknown' if not present.
+ * Cached on module load — snes9x doesn't change between captures within a run.
+ */
+let _snes9xCommit = null;
+function getSnes9xCommit() {
+    if (_snes9xCommit !== null) return _snes9xCommit;
+    try {
+        const gitDir = join(__dirname, '..', '..', 'core', 'snes9x', '.git');
+        const headPath = join(gitDir, 'HEAD');
+        if (!existsSync(headPath)) { _snes9xCommit = 'unknown'; return _snes9xCommit; }
+        const head = readFileSync(headPath, 'utf-8').trim();
+        if (head.startsWith('ref: ')) {
+            const ref = head.slice(5);
+            const refPath = join(gitDir, ref);
+            if (existsSync(refPath)) {
+                _snes9xCommit = readFileSync(refPath, 'utf-8').trim().slice(0, 7);
+                return _snes9xCommit;
+            }
+        } else if (/^[0-9a-f]{40}$/.test(head)) {
+            _snes9xCommit = head.slice(0, 7);
+            return _snes9xCommit;
+        }
+    } catch {}
+    _snes9xCommit = 'unknown';
+    return _snes9xCommit;
+}
+
+function sha256Hex(buf) {
+    return createHash('sha256').update(buf).digest('hex');
+}
 
 /**
  * Compare two RGBA buffers pixel by pixel.
@@ -152,7 +201,14 @@ export function runVisualRegression(core, opensnesDir, options = {}) {
         // Update mode: save current as baseline
         if (update) {
             writeFileSync(baselineFile, Buffer.from(rgba.buffer));
-            writeFileSync(metaFile, JSON.stringify({ width, height, frames: framesWarmup }));
+            writeFileSync(metaFile, JSON.stringify({
+                width,
+                height,
+                frames: framesWarmup,
+                rom_sha256: sha256Hex(rom),
+                snes9x_commit: getSnes9xCommit(),
+                captured_at: new Date().toISOString(),
+            }));
             updated++;
             if (verbose) console.log(`  [UPDATE] ${label} (${width}x${height})`);
             results.push({ label, passed: true, diffPixels: 0, message: 'baseline updated' });
@@ -167,6 +223,25 @@ export function runVisualRegression(core, opensnesDir, options = {}) {
             results.push({ label, passed: true, diffPixels: 0, message: 'no baseline (skipped)' });
             passed++;
             continue;
+        }
+
+        // Drift detection: warn if baseline metadata names a different snes9x or rom.
+        // This doesn't change pass/fail — just surfaces "your reference image was
+        // captured under different conditions" so a noisy diff has visible context.
+        if (existsSync(metaFile)) {
+            try {
+                const meta = JSON.parse(readFileSync(metaFile, 'utf-8'));
+                const currentSnes9x = getSnes9xCommit();
+                if (meta.snes9x_commit && meta.snes9x_commit !== currentSnes9x) {
+                    console.warn(`  [WARN] ${label}: baseline captured against snes9x ${meta.snes9x_commit}, currently ${currentSnes9x}`);
+                }
+                if (meta.rom_sha256) {
+                    const currentRomSha = sha256Hex(rom);
+                    if (meta.rom_sha256 !== currentRomSha) {
+                        console.warn(`  [WARN] ${label}: ROM changed since baseline (${meta.rom_sha256.slice(0, 7)} → ${currentRomSha.slice(0, 7)})`);
+                    }
+                }
+            } catch {} // tolerate legacy/minimal .meta files (no warning fields)
         }
 
         const baseline = new Uint8Array(readFileSync(baselineFile));
