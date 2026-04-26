@@ -1960,6 +1960,98 @@ export function runCompilerTests(opensnesDir, options = {}) {
     })();
 
     // ================================================================
+    // Test 61: arg_push_order (P2.2 — ABI regression guard)
+    //
+    // Verifies cc65816 still pushes args LEFT-TO-RIGHT (compiler/ABI.md).
+    // A regression to standard cdecl right-to-left would silently break
+    // every cross-function call. Two checks in one fixture:
+    //   1. Caller side: pea sequence preserves declaration order.
+    //   2. Callee side: leftmost arg lives at the HIGHEST stack offset.
+    // ================================================================
+    (function test_arg_push_order() {
+        const name = 'arg_push_order';
+        const src = join(SCRIPT_DIR, 'test_arg_push_order.c');
+        const out = join(BUILD, 'test_arg_push_order.c.asm');
+        const r = tryCompile(name, src, out);
+        if (!r) return;
+
+        // 1) Caller side: in caller_three_literals, the pea instructions for
+        //    0x1111, 0x2222, 0x3333 must appear in that exact order before jsl.
+        const callerBody = extractFuncBodyToEnds(r.asm, 'caller_three_literals');
+        const peaSequence = [...callerBody.matchAll(/pea\.w (\d+)/g)].map(m => parseInt(m[1]));
+        const expectedPeas = [0x1111, 0x2222, 0x3333];
+        if (peaSequence.length < 3) {
+            fail(name, `caller_three_literals: expected 3 pea.w, found ${peaSequence.length}`);
+            return;
+        }
+        for (let i = 0; i < 3; i++) {
+            if (peaSequence[i] !== expectedPeas[i]) {
+                fail(name, `caller_three_literals: pea[${i}] = ${peaSequence[i]} (0x${peaSequence[i].toString(16)}), expected ${expectedPeas[i]} (0x${expectedPeas[i].toString(16)}) — push order may have flipped to right-to-left`);
+                return;
+            }
+        }
+
+        // 2) Callee side: callee_three returns a - b - c. The first lda must
+        //    load from the HIGHEST offset (a, leftmost arg), then sbc loads
+        //    decrease (b at middle, c at lowest). For framesize=0:
+        //    a at 8,s, b at 6,s, c at 4,s.
+        const calleeBody = extractFuncBodyToEnds(r.asm, 'callee_three');
+        if (!/sbc\.w #0/.test(calleeBody) && !/sbc\.w #\d+/.test(calleeBody) || /sbc\.w #[1-9]/.test(calleeBody.split('@start')[0] || '')) {
+            // Frameless leaf is expected for this signature; OK if there's no sbc in the prologue.
+        }
+        const ldaOff = calleeBody.match(/lda (\d+),s/);
+        const sbcOffs = [...calleeBody.matchAll(/sbc (\d+),s/g)].map(m => parseInt(m[1]));
+        if (!ldaOff) { fail(name, 'callee_three: no lda N,s found'); return; }
+        if (sbcOffs.length < 2) { fail(name, `callee_three: expected 2 sbc N,s, found ${sbcOffs.length}`); return; }
+        const ldaN = parseInt(ldaOff[1]);
+        if (ldaN <= sbcOffs[0] || sbcOffs[0] <= sbcOffs[1]) {
+            fail(name, `callee_three: stack offsets non-decreasing (lda ${ldaN},s, sbc ${sbcOffs[0]},s, sbc ${sbcOffs[1]},s). LEFT-TO-RIGHT push expects strictly decreasing.`);
+            return;
+        }
+
+        pass(name);
+    })();
+
+    // ================================================================
+    // Test 62: section_directives (P2.2 — WLA-DX width-tracking guard)
+    //
+    // cc65816 must emit .ACCU 16 and .INDEX 16 at every function's .SECTION
+    // header. Without them WLA-DX defaults to 8-bit tracking, miscalculates
+    // the byte length of `cpx #imm` etc., and every later address shifts —
+    // the variable-shift bug that ate weeks of debugging in 2026-Q1.
+    // ================================================================
+    (function test_section_directives() {
+        const name = 'section_directives';
+        const src = join(SCRIPT_DIR, 'test_section_directives.c');
+        const out = join(BUILD, 'test_section_directives.c.asm');
+        const r = tryCompile(name, src, out);
+        if (!r) return;
+
+        // The .SECTION line and the directives must appear before the
+        // function label. We look for the canonical sequence:
+        //   .SECTION ".text.trivial" SUPERFREE
+        //   .ACCU 16
+        //   .INDEX 16
+        //   trivial:
+        const fnRegion = r.asm.match(/\.SECTION "\.text\.trivial"[\s\S]*?^trivial:/m);
+        if (!fnRegion) {
+            fail(name, "could not locate '.SECTION .text.trivial' header before 'trivial:' label");
+            return;
+        }
+        const header = fnRegion[0];
+        if (!/\.ACCU 16/.test(header)) {
+            fail(name, "missing '.ACCU 16' directive between .SECTION and 'trivial:' label");
+            return;
+        }
+        if (!/\.INDEX 16/.test(header)) {
+            fail(name, "missing '.INDEX 16' directive between .SECTION and 'trivial:' label");
+            return;
+        }
+
+        pass(name);
+    })();
+
+    // ================================================================
     // Summary
     // ================================================================
 
