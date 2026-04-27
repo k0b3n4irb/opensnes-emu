@@ -153,7 +153,7 @@ void test_button_combinations(void) {
 int main(void) {
     consoleInit();
     setMode(BG_MODE0, 0);
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textPrintAt(2, 1, "INPUT MODULE TESTS");
     textPrintAt(2, 2, "------------------");

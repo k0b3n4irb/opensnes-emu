@@ -236,7 +236,7 @@ void test_kill_all(void) {
 int main(void) {
     consoleInit();
     setMode(BG_MODE0, 0);
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textPrintAt(1, 1, "OBJECT ENGINE TESTS");
     textPrintAt(1, 2, "-------------------");

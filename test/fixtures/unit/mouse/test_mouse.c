@@ -150,7 +150,7 @@ void test_mouse_init_connected_coherence(void) {
 int main(void) {
     consoleInit();
     setMode(BG_MODE0, 0);
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textPrintAt(2, 1, "MOUSE MODULE TESTS");
     textPrintAt(2, 2, "------------------");

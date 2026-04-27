@@ -4,11 +4,10 @@
 // Tests text rendering cursor management and string output.
 //
 // Testable functions (state readable from C):
-//   textInit()      — initializes text_config and cursor
+//   textInit(addr, tile, pal) — defaults via TEXT_DEFAULT_*, or custom config
 //   textSetPos()    — sets cursor X/Y
 //   textGetX()      — returns cursor X
 //   textGetY()      — returns cursor Y
-//   textInitEx()    — custom config
 //
 // Smoke-test only (hardware/DMA):
 //   textFlush()     — triggers DMA, no read-back
@@ -39,10 +38,10 @@ static u8 test_line;
 } while(0)
 
 // =============================================================================
-// Test: textInit default configuration
+// Test: textInit with TEXT_DEFAULT_* constants
 // =============================================================================
 void test_text_init(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     // Default config: tilemap at $7000, font tile 0, palette 0
     // Exact values depend on implementation, but should be reasonable
@@ -59,7 +58,7 @@ void test_text_init(void) {
 // Test: textSetPos / textGetX / textGetY
 // =============================================================================
 void test_text_cursor(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textSetPos(5, 10);
     TEST("cur: X=5", textGetX() == 5);
@@ -78,7 +77,7 @@ void test_text_cursor(void) {
 // Test: textPutChar advances cursor
 // =============================================================================
 void test_text_putchar(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
     textSetPos(0, 0);
 
     textPutChar('A');
@@ -99,7 +98,7 @@ void test_text_putchar(void) {
 // Test: textPrint advances cursor by string length
 // =============================================================================
 void test_text_print(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
     textSetPos(0, 0);
 
     textPrint("Hi");
@@ -115,7 +114,7 @@ void test_text_print(void) {
 // Test: textPrintAt sets position then prints
 // =============================================================================
 void test_text_print_at(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textPrintAt(3, 7, "AB");
     // After printAt(3,7,"AB"), cursor should be at (5, 7)
@@ -124,25 +123,25 @@ void test_text_print_at(void) {
 }
 
 // =============================================================================
-// Test: textInitEx custom configuration
+// Test: textInit with custom (non-default) byte address
 // =============================================================================
-void test_text_init_ex(void) {
-    textInitEx(0x3800, 128, 2);
+void test_text_init_custom(void) {
+    textInit(0x3800, 128, 2);
 
-    TEST("ex: tmap=$1C00", text_config.tilemap_addr == 0x1C00); /* word addr = $3800 >> 1 */
-    TEST("ex: font_t=128", text_config.font_tile == 128);
-    TEST("ex: palette=2", text_config.palette == 2);
+    TEST("custom: tmap=$1C00", text_config.tilemap_addr == 0x1C00); /* word addr = $3800 >> 1 */
+    TEST("custom: font_t=128", text_config.font_tile == 128);
+    TEST("custom: palette=2", text_config.palette == 2);
 
     // Cursor should reset
-    TEST("ex: curX=0", textGetX() == 0);
-    TEST("ex: curY=0", textGetY() == 0);
+    TEST("custom: curX=0", textGetX() == 0);
+    TEST("custom: curY=0", textGetY() == 0);
 }
 
 // =============================================================================
 // Test: textClear (smoke test — clears buffer, can't verify VRAM)
 // =============================================================================
 void test_text_clear(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
     textPrintAt(5, 5, "Test");
     textClear();
     // After clear, cursor position is implementation-defined
@@ -154,7 +153,7 @@ void test_text_clear(void) {
 // Test: textFlush (smoke test — triggers DMA flag)
 // =============================================================================
 void test_text_flush(void) {
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
     textPrintAt(0, 0, "Flush");
     textFlush();
     // No crash = pass
@@ -167,7 +166,7 @@ void test_text_flush(void) {
 int main(void) {
     consoleInit();
     setMode(BG_MODE0, 0);
-    textInit();
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     textPrintAt(1, 1, "TEXT MODULE TESTS");
     textPrintAt(1, 2, "-----------------");
@@ -181,12 +180,12 @@ int main(void) {
     test_text_putchar();
     test_text_print();
     test_text_print_at();
-    test_text_init_ex();
+    test_text_init_custom();
     test_text_clear();
     test_text_flush();
 
-    // Reinitialize text for display (textInitEx may have changed config)
-    textInit();
+    // Reinitialize text for display (custom-config test may have shifted state)
+    textInit(TEXT_DEFAULT_TILEMAP_ADDR, TEXT_DEFAULT_FONT_TILE, TEXT_DEFAULT_PALETTE);
 
     test_line += 2;
     textPrintAt(1, test_line, "Passed: ");
