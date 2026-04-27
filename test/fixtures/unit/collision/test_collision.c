@@ -106,6 +106,22 @@ void test_tile_collision(void) {
     TEST("tile_edge", collideTile(8, 8, tilemap, 8) == 1);
 }
 
+// =============================================================================
+// Test: collideTile out-of-bounds = SOLID (split into its own function to keep
+// each test_*() body's framesize below the cc65816 255-byte stack-relative
+// addressing ceiling).
+// =============================================================================
+void test_tile_collide_oob(void) {
+    static u8 tilemap[64] = {0};  // empty 8x8 tilemap
+
+    // Returning 0 (no collision) here let sprites escape the playable area
+    // in examples/basics/collision_demo. The fix treats off-map as solid.
+    TEST("tile_oob_neg_x", collideTile(-1, 4, tilemap, 8) == 1);
+    TEST("tile_oob_neg_y", collideTile(4, -1, tilemap, 8) == 1);
+    TEST("tile_oob_right", collideTile(64, 4, tilemap, 8) == 1);  // px = mapWidth*8
+    TEST("tile_oob_far",  collideTile(999, 4, tilemap, 8) == 1);
+}
+
 void test_rect_helpers(void) {
     Rect r;
     s16 cx, cy;
@@ -141,6 +157,7 @@ void main(void) {
     test_rect_collision();
     test_point_collision();
     test_tile_collision();
+    test_tile_collide_oob();
     test_rect_helpers();
 
     // Summary
