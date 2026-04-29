@@ -1,6 +1,18 @@
 # Visual Regression Baselines
 
-This directory holds the reference framebuffers used by `phases/visual-regression.mjs`.
+This directory holds two parallel sets of reference framebuffers:
+
+- **`<label>.bin` + `<label>.meta`** — captured by `phases/visual-regression.mjs`
+  via the snes9x WASM core. Covers all 53 examples.
+- **`<label>.mesen2.bin`** — captured by `phases/visual-mesen2.mjs` via the
+  vendored Mesen2 binary in `--testrunner` mode. Covers the 4 chip-using
+  examples (`superfx_*`, `sa1_*`) where snes9x cannot detect the GSU and
+  reports "GSU: NOT DETECTED" instead of running the chip code. See the
+  "Mesen2 Visual Regression" section below for details.
+
+The two sets are independent: a chip ROM has both a `.bin` (snes9x view —
+useful only as a "boots without crashing" check) and a `.mesen2.bin`
+(Mesen2 view — the meaningful one).
 
 ## Layout
 
@@ -90,3 +102,66 @@ rendering pipeline.
 - **`captured_at` is wall-clock time, not git commit time** — useful as a hint
   but not authoritative. The `rom_sha256` and `snes9x_commit` fields are the
   load-bearing provenance.
+
+## Mesen2 Visual Regression (chip-using ROMs)
+
+snes9x's libretro core does not detect the GSU chip in the SuperFX ROM
+headers OpenSNES produces, so for those ROMs the snes9x phase only
+validates "boots without crashing" — the GSU code path is never
+exercised. Mesen2 detects the chip correctly and runs the GSU / SA-1
+examples cleanly, so a second visual phase runs the chip ROMs through
+the vendored Mesen2 binary in `--testrunner` mode.
+
+### Setup
+
+The binary is **not** committed (27 MB). Contributors who want
+chip-ROM coverage run the install script once:
+
+```bash
+tools/opensnes-emu/scripts/install-mesen2.sh
+```
+
+It downloads the matching Linux/macOS x64/ARM64 zip from the Mesen2
+GitHub releases and unpacks `vendor/Mesen`. Subsequent runs short-
+circuit when the cached version matches.
+
+If the binary is missing, the Mesen2 phase reports `[SKIP]` instead
+of failing — the rest of the suite still runs.
+
+### Baseline format
+
+| File | Format |
+|------|--------|
+| `<label>.mesen2.bin` | 8-byte header (`width:u32 LE, height:u32 LE`) + raw RGBA, row-major, A=255 |
+
+The header is necessary because Mesen2 reports the SNES PPU frame size
+dynamically (typically 256×239 on NTSC, can change with hi-res /
+interlace modes), unlike snes9x which always emits 256×224.
+
+The capture path is driven by a generic Lua script
+(`test/scripts/visual-capture.lua`) that takes its parameters via
+environment variables (`MESEN_CAPTURE_FRAME`, `MESEN_CAPTURE_OUTPUT`).
+The script can't use `emu.takeScreenshot()` because the video decoder
+is intentionally not initialised in `--testrunner` mode, so we use
+`emu.getScreenBuffer()` and write the framebuffer ourselves. Mesen2
+sandboxes the `io` and `os` libraries by default — the phase passes
+`--Debug.ScriptWindow.AllowIoOsAccess=true` to unlock them.
+
+### Tolerance
+
+Default `maxDiffPixels = 50`. Per-ROM overrides live in
+`ROM_DIFF_OVERRIDES` in `phases/visual-mesen2.mjs`:
+
+| ROM | Tolerance | Reason |
+|-----|----------:|--------|
+| `graphics/effects/superfx_3d` | 2000 | Continuously animated rotating cube — Mesen2 startup latency varies enough that frame 120 lands at a slightly different rotation between runs (~1°). The phase still catches "GSU NOT DETECTED" regressions clearly even at this tolerance. |
+
+### Regeneration
+
+```bash
+cd tools/opensnes-emu
+node test/run-all-tests.mjs --phase mesen2 --update-baselines
+```
+
+Validate the new baselines visually in Mesen2 (load the ROM in the
+GUI, run a few seconds, confirm output) before committing.

@@ -441,6 +441,47 @@ async function phase6_visual() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PHASE 6.5: MESEN2 VISUAL REGRESSION (chip ROMs only)
+// ═══════════════════════════════════════════════════════════════════
+// snes9x doesn't detect GSU in our SuperFX ROM headers, so the snes9x
+// visual phase compares two equally-broken "GSU: NOT DETECTED" frames
+// for chip examples and passes vacuously. This phase runs the same set
+// of chip-using ROMs through Mesen2 (vendored binary) in --testrunner
+// mode, which actually executes the GSU/SA-1 code path.
+// Skipped (not failed) if the Mesen2 binary isn't installed locally.
+
+async function phase6b_mesen2() {
+    startPhase('Mesen2 Visual Regression');
+
+    try {
+        const { runMesen2VisualRegression } = await import('./phases/visual-mesen2.mjs');
+        const result = runMesen2VisualRegression(OPENSNES, {
+            update: UPDATE_BASELINES,
+            verbose: VERBOSE,
+            maxDiffPixels: 50,
+        });
+
+        if (result.skipped) {
+            skip('mesen2 visual', result.reason);
+            phaseResult();
+            return;
+        }
+
+        if (UPDATE_BASELINES) {
+            console.log(`  Baselines updated: ${result.updated} ROMs`);
+        }
+
+        for (const r of result.results) {
+            check(`mesen2/${r.label}`, r.passed, r.message);
+        }
+    } catch (e) {
+        check('mesen2 visual', false, String(e));
+    }
+
+    phaseResult();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PHASE 7: LAG FRAME DETECTION
 // ═══════════════════════════════════════════════════════════════════
 
@@ -581,6 +622,9 @@ async function main() {
 
     // Phase 6: visual regression
     if (shouldRun('visual')) await phase6_visual();
+
+    // Phase 6.5: Mesen2 visual regression for chip ROMs (skipped if Mesen2 absent)
+    if (shouldRun('mesen2')) await phase6b_mesen2();
 
     // Phase 7: lag frame detection
     if (shouldRun('lagcheck')) await phase7_lagcheck();

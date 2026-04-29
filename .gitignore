@@ -5,6 +5,12 @@ core/snes9x/
 roms/
 *.tsbuildinfo
 
+# Vendored Mesen2 binary downloaded by scripts/install-mesen2.sh
+# (~27 MB; not tracked. Contributors run the install script once.)
+vendor/Mesen
+vendor/Mesen.exe
+vendor/.mesen-version
+
 # Generated test fixture artifacts (rebuilt by `make` from each fixture's source)
 test/fixtures/**/*.sfc
 test/fixtures/**/*.sym
