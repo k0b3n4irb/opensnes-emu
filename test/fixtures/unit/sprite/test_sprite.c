@@ -7,12 +7,19 @@
 // OAM buffer layout (oamMemory[], 544 bytes):
 //   Bytes 0-511: 4 bytes per sprite (128 sprites)
 //     offset+0: X position (low 8 bits)
-//     offset+1: Y position
+//     offset+1: Y position (stored as user_y - 1, see note below)
 //     offset+2: Tile number (low 8 bits)
 //     offset+3: Attributes (vhoopppc)
 //   Bytes 512-543: High table (2 bits per sprite)
 //     bit 0 of each pair: X high bit (bit 8)
 //     bit 1 of each pair: size select (0=small, 1=large)
+//
+// SNES PPU Y +1 quirk:
+//   The PPU renders OAM_Y=N on scanlines N+1..N+8. To make the user-supplied
+//   Y match the rendered top scanline, oamSet / oamSetY / oamSetXY / oamSetFast
+//   / oamSetXYFast all store (Y - 1) into oamMemory. oamHide is exempt: it
+//   writes OBJ_HIDE_Y (240) directly. Tests below assert the stored byte,
+//   hence the -1 in Y assertions.
 // =============================================================================
 
 #include <snes.h>
@@ -104,7 +111,7 @@ void test_oam_set_position(void) {
     oamSet(0, 100, 80, 5, 0, 0, 0);
 
     TEST("set: X lo=100", oamMemory[0] == 100);
-    TEST("set: Y=80", oamMemory[1] == 80);
+    TEST("set: Y=79", oamMemory[1] == 79); /* 80 - 1 (PPU quirk) */
     TEST("set: tile=5", oamMemory[2] == 5);
     // attr = vhoopppc: no flip, prio=0, pal=0, tile hi=0 → 0x00
     TEST("set: attr=0x00", oamMemory[3] == 0x00);
@@ -126,7 +133,7 @@ void test_oam_set_xhi(void) {
 
     // X low 8 bits = 300 & 0xFF = 0x2C = 44
     TEST("xhi: X lo=44", oamMemory[0] == 44);
-    TEST("xhi: Y=50", oamMemory[1] == 50);
+    TEST("xhi: Y=49", oamMemory[1] == 49); /* 50 - 1 (PPU quirk) */
 
     // X high bit should be set
     u8 ht = oamMemory[512];
@@ -168,7 +175,7 @@ void test_oam_hide(void) {
 
     // First set sprite 5 at a visible position
     oamSet(5, 100, 80, 0, 0, 0, 0);
-    TEST("hide: pre Y=80", oamMemory[5 * 4 + 1] == 80);
+    TEST("hide: pre Y=79", oamMemory[5 * 4 + 1] == 79); /* 80 - 1 (PPU quirk) */
 
     // Now hide it
     oamHide(5);
@@ -187,7 +194,7 @@ void test_oam_set_visible(void) {
     oamClear();
 
     oamSet(0, 100, 80, 0, 0, 0, 0);
-    TEST("vis: pre Y=80", oamMemory[1] == 80);
+    TEST("vis: pre Y=79", oamMemory[1] == 79); /* 80 - 1 (PPU quirk) */
 
     oamSetVisible(0, OBJ_HIDE);
     TEST("vis: hide Y=240", oamMemory[1] == OBJ_HIDE_Y);
@@ -208,11 +215,11 @@ void test_oam_setxy(void) {
     TEST("setX: X=200", oamMemory[0] == 200);
 
     oamSetY(0, 150);
-    TEST("setY: Y=150", oamMemory[1] == 150);
+    TEST("setY: Y=149", oamMemory[1] == 149); /* 150 - 1 (PPU quirk) */
 
     oamSetXY(0, 75, 120);
     TEST("setXY: X=75", oamMemory[0] == 75);
-    TEST("setXY: Y=120", oamMemory[1] == 120);
+    TEST("setXY: Y=119", oamMemory[1] == 119); /* 120 - 1 (PPU quirk) */
 }
 
 // =============================================================================
@@ -254,19 +261,19 @@ void test_multi_sprite(void) {
     oamSet(1, 30, 40, 2, 1, 0, 0);
     oamSet(2, 50, 60, 3, 2, 0, 0);
 
-    // Verify sprite 0
+    // Verify sprite 0 (Y stored -1 per PPU quirk)
     TEST("multi: s0 X=10", oamMemory[0] == 10);
-    TEST("multi: s0 Y=20", oamMemory[1] == 20);
+    TEST("multi: s0 Y=19", oamMemory[1] == 19);
     TEST("multi: s0 t=1", oamMemory[2] == 1);
 
     // Verify sprite 1
     TEST("multi: s1 X=30", oamMemory[4] == 30);
-    TEST("multi: s1 Y=40", oamMemory[5] == 40);
+    TEST("multi: s1 Y=39", oamMemory[5] == 39);
     TEST("multi: s1 t=2", oamMemory[6] == 2);
 
     // Verify sprite 2
     TEST("multi: s2 X=50", oamMemory[8] == 50);
-    TEST("multi: s2 Y=60", oamMemory[9] == 60);
+    TEST("multi: s2 Y=59", oamMemory[9] == 59);
     TEST("multi: s2 t=3", oamMemory[10] == 3);
 }
 
@@ -281,13 +288,13 @@ void test_all_sprites(void) {
         oamSet(i, i, i + 10, 0, i % 8, 0, 0);
     }
 
-    // Spot-check a few sprites
+    // Spot-check a few sprites (Y stored -1 per PPU quirk)
     TEST("all: s0 X=0", oamMemory[0] == 0);
-    TEST("all: s0 Y=10", oamMemory[1] == 10);
+    TEST("all: s0 Y=9", oamMemory[1] == 9);
     TEST("all: s64 X=64", oamMemory[64 * 4] == 64);
-    TEST("all: s64 Y=74", oamMemory[64 * 4 + 1] == 74);
+    TEST("all: s64 Y=73", oamMemory[64 * 4 + 1] == 73);
     TEST("all: s127 X=127", oamMemory[127 * 4] == 127);
-    TEST("all: s127 Y=137", oamMemory[127 * 4 + 1] == 137);
+    TEST("all: s127 Y=136", oamMemory[127 * 4 + 1] == 136);
 }
 
 // =============================================================================
@@ -371,7 +378,7 @@ void test_oam_setxy_fast(void) {
     oamSetXYFast(0, 200, 100);
 
     TEST("xyfast: X=200", oamMemory[0] == 200);
-    TEST("xyfast: Y=100", oamMemory[1] == 100);
+    TEST("xyfast: Y=99", oamMemory[1] == 99); /* 100 - 1 (PPU quirk) */
     // tile and attr should be unchanged
     TEST("xyfast: tile=10", oamMemory[2] == 10);
 
