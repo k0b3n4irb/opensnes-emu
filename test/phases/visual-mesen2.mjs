@@ -186,9 +186,22 @@ export function runMesen2VisualRegression(opensnesDir, options = {}) {
             ], { env, timeout: timeoutSec * 1000, encoding: 'utf-8' });
 
             if (r.status !== 0) {
+                // Include the tail of stdout/stderr so CI failures point
+                // at the actual reason (e.g. missing libfontconfig, .NET
+                // runtime version mismatch, std::bad_cast from native
+                // core, xvfb display init error) instead of just a numeric
+                // exit code. Truncated to ~2 KB per stream to keep the
+                // overall log readable when several ROMs fail at once.
+                const tail = (s) => {
+                    if (!s) return '(empty)';
+                    return s.length > 2000 ? '...' + s.slice(-2000) : s;
+                };
                 results.push({
                     label, passed: false, diffPixels: -1,
-                    message: `Mesen2 exited with status ${r.status} (signal=${r.signal ?? 'none'})`,
+                    message:
+                        `Mesen2 exited with status ${r.status} (signal=${r.signal ?? 'none'})\n` +
+                        `--- stderr (tail) ---\n${tail(r.stderr)}\n` +
+                        `--- stdout (tail) ---\n${tail(r.stdout)}`,
                 });
                 failed++;
                 continue;
