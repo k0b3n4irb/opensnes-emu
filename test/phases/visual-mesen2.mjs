@@ -138,6 +138,22 @@ export function runMesen2VisualRegression(opensnesDir, options = {}) {
         };
     }
 
+    // Mesen2 is built on Avalonia/Skia and initialises its GUI subsystem
+    // before --testrunner is even checked, so it SIGABRTs on a headless
+    // host (no DISPLAY). When DISPLAY is missing, prepend `xvfb-run -a`
+    // to provide a virtual display. If xvfb-run is not installed either,
+    // fall through and let the spawn fail with a useful diagnostic so the
+    // user knows to install xvfb.
+    let mesenCmd = mesen;
+    let mesenArgsPrefix = [];
+    if (!process.env.DISPLAY) {
+        const w = spawnSync('which', ['xvfb-run'], { encoding: 'utf-8' });
+        if (w.status === 0 && w.stdout.trim()) {
+            mesenCmd = w.stdout.trim();
+            mesenArgsPrefix = ['-a', '--server-args=-screen 0 1024x768x24', mesen];
+        }
+    }
+
     const roms = findChipRoms(opensnesDir);
     if (roms.length === 0) {
         return {
@@ -163,7 +179,8 @@ export function runMesen2VisualRegression(opensnesDir, options = {}) {
                 MESEN_CAPTURE_FRAME: String(framesWarmup),
                 MESEN_CAPTURE_OUTPUT: captureFile,
             };
-            const r = spawnSync(mesen, [
+            const r = spawnSync(mesenCmd, [
+                ...mesenArgsPrefix,
                 '--Debug.ScriptWindow.AllowIoOsAccess=true',
                 '--testrunner', romPath, SCRIPT_PATH,
             ], { env, timeout: timeoutSec * 1000, encoding: 'utf-8' });
