@@ -1904,15 +1904,16 @@ export function runCompilerTests(opensnesDir, options = {}) {
         if (/\tjsl/.test(body)) { fail(name, 'call_add still has jsl (should be jml only)'); return; }
         if (/\trtl/.test(body)) { fail(name, 'call_add still has rtl (should be eliminated by tail call)'); return; }
 
-        // call_chain: jml add_one + jsl add_one, no rtl
-        // Chained tail call (inner is non-tail jsl, outer is tail jml).
-        // C.1 only handles single-tail-call wrappers; the chain pattern
-        // needs C.2 (intermediate temp lifecycle across a non-tail call
-        // while still TCO'ing the final tail call). Until C.2 lands,
-        // mark this as a known bug independently so call_add's win
-        // shows up as a real PASS rather than being masked by call_chain.
+        // call_chain: jml add_one + jsl add_one, no rtl.
+        // Chained tail call (inner = non-tail jsl whose result feeds the
+        // outer = tail jml). Implemented by chantier C.2.2 in
+        // qbe/w65816 — the framed Oarg path stores each outgoing arg to
+        // its caller-slot before the Ocall handler emits the frame
+        // teardown + jml. With the fix in place this is a hard
+        // requirement: any regression on chained TCO must surface
+        // immediately (no knownBug() escape hatch).
         body = extractFuncBodyToEnds(r.asm, 'call_chain');
-        if (!/\tjml add_one/.test(body)) { knownBug(name, "call_chain missing 'jml add_one' (chained tail call — chantier C.2 not implemented)"); return; }
+        if (!/\tjml add_one/.test(body)) { fail(name, "call_chain missing 'jml add_one' (chained tail call regressed — see C.2.2)"); return; }
         if (!/\tjsl add_one/.test(body)) { fail(name, "call_chain missing 'jsl add_one' (first call should remain)"); return; }
         if (/\trtl/.test(body)) { fail(name, 'call_chain still has rtl (should be eliminated by tail call)'); return; }
 
