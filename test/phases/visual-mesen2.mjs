@@ -58,6 +58,7 @@ const CHIP_ROM_LABELS = new Set([
  */
 const ROM_DIFF_OVERRIDES = {
     'graphics/effects/superfx_3d': 2000,   // rotating cube — animation drift
+    'memory/sa1_starfield': 1500,          // moving starfield — animation drift
 };
 
 /** Locate the Mesen2 binary. Returns absolute path or null. */
