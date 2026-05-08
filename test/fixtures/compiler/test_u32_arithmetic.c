@@ -1,16 +1,17 @@
 // =============================================================================
-// Test: 32-bit (unsigned int) arithmetic
+// Test: 32-bit (unsigned long) arithmetic
 // =============================================================================
 // Prevents: Incorrect multi-word arithmetic on 16-bit CPU
 //
 // The 65816 is a 16-bit CPU. 32-bit operations require multi-word
 // sequences (two 16-bit operations with carry propagation).
 //
-// NOTE: On cproc/65816, type sizes are:
+// NOTE: On cproc/65816, type sizes (since chantier A1, 2026-05-08):
 //   unsigned char  = 1 byte (u8)
 //   unsigned short = 2 bytes (u16)
-//   unsigned int   = 4 bytes (u32)  <-- THIS is 32-bit
-//   unsigned long  = 8 bytes (u64)  <-- NOT 32-bit!
+//   unsigned int   = 2 bytes (native 16-bit word)
+//   unsigned long  = 4 bytes (u32)  <-- THIS is 32-bit
+//   unsigned long long = 8 bytes (u64)
 //
 // Uses function parameters to prevent constant folding, ensuring
 // the compiler generates actual runtime arithmetic instructions.
@@ -18,7 +19,7 @@
 
 typedef unsigned char u8;
 typedef unsigned short u16;
-typedef unsigned int u32;
+typedef unsigned long u32;
 
 u32 result32;
 u16 result16;
