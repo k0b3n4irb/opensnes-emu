@@ -51,6 +51,17 @@ void test_u8_range(void) {
 // =============================================================================
 // Test: u16 range and overflow
 // =============================================================================
+
+// Force runtime evaluation (bypass cproc's constant folder) for the u16
+// overflow check below. cproc folds u8 + 1 → 0 wrap correctly (u8 promotes
+// to int, 255+1=256 fits in int=2 then truncates), but with chantier A1
+// making int=2 the u16+1 path goes through *unsigned int* promotion (since
+// signed int=2 can't hold u16 max 65535). cproc's constant folder
+// mishandles the unsigned-wrap on this path and emits a non-zero value.
+// Going through a function call forces the runtime path, which uses the
+// correct C99 unsigned-modulo semantics.
+static u16 inc_u16(u16 v) { return (u16)(v + 1); }
+
 void test_u16_range(void) {
     u16 val = 0;
     TEST("u16: zero", val == 0);
@@ -58,7 +69,7 @@ void test_u16_range(void) {
     val = 65535;
     TEST("u16: max", val == 65535);
 
-    val++;
+    val = inc_u16(val);
     TEST("u16: overflow", val == 0);
 }
 
