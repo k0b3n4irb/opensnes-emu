@@ -126,6 +126,49 @@ void test_fixAbs(void) {
     TEST("fixAbs_zero", result == 0);
 }
 
+void test_sqrt(void) {
+    /* Integer sqrt — exact answers for perfect squares. */
+    TEST("sqrt16_0",     sqrt16(0) == 0);
+    TEST("sqrt16_1",     sqrt16(1) == 1);
+    TEST("sqrt16_4",     sqrt16(4) == 2);
+    TEST("sqrt16_100",   sqrt16(100) == 10);
+    TEST("sqrt16_65025", sqrt16(65025) == 255);
+
+    /* Floor behaviour — sqrt16 is the floor of the real square root. */
+    TEST("sqrt16_2",     sqrt16(2) == 1);    /* sqrt(2) ≈ 1.414 */
+    TEST("sqrt16_99",    sqrt16(99) == 9);   /* sqrt(99) ≈ 9.95 */
+
+    /* fixSqrt: 8.8 fixed-point. fixSqrt(FIX(64)) = FIX(8). */
+    TEST("fixSqrt_64",   fixSqrt(FIX(64)) == FIX(8));
+    /* fixSqrt(FIX(1)) — sqrt(1.0) = 1.0, but precision is 4 fractional
+     * bits (sqrt16 returns 16 for raw=256, then <<4 = 256 = FIX(1)). */
+    TEST("fixSqrt_1",    fixSqrt(FIX(1)) == FIX(1));
+    /* Negative inputs return 0 (defined-but-zero). */
+    TEST("fixSqrt_neg",  fixSqrt(-100) == 0);
+}
+
+void test_atan2(void) {
+    /* Cardinal directions. The 8-bit angle convention used by the
+     * sin/cos LUT: 0 = +X, 64 = +Y, 128 = -X, 192 = -Y. */
+    TEST("atan2_origin", atan2_8(0, 0) == 0);   /* defined-but-zero */
+    TEST("atan2_east",   atan2_8(0, 100) == 0);   /* +X axis */
+    TEST("atan2_south",  atan2_8(100, 0) == 64);  /* +Y axis */
+    TEST("atan2_west",   atan2_8(0, -100) == 128); /* -X axis */
+    TEST("atan2_north",  atan2_8(-100, 0) == 192); /* -Y axis */
+
+    /* Diagonals — within ±1 of the exact angle (LUT precision). */
+    {
+        u8 a;
+        a = atan2_8(100, 100);   /* +X +Y → 45° = angle 32 */
+        TEST("atan2_se", a >= 31 && a <= 33);
+        a = atan2_8(-100, 100);  /* +X -Y → 315° = angle 224 */
+        TEST("atan2_ne", a >= 223 && a <= 225);
+    }
+
+    /* Scale invariance — same angle for proportional inputs. */
+    TEST("atan2_scale", atan2_8(50, 50) == atan2_8(5000, 5000));
+}
+
 void test_random(void) {
     u16 r1, r2, r3;
 
@@ -161,6 +204,8 @@ void main(void) {
     test_fix_mul();
     test_trig();
     test_fixAbs();
+    test_sqrt();
+    test_atan2();
     test_random();
 
     textPrintAt(0, 26, "--------------------");
