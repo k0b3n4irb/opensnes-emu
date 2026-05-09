@@ -1475,15 +1475,27 @@ export function runCompilerTests(opensnesDir, options = {}) {
         body = extractFuncBodyToEnds(r.asm, 'forward_with_work');
         if (!/\bsbc\b/.test(body)) { fail(name, 'forward_with_work missing frame setup (sbc) — intermediate across call needs frame!'); failCount++; }
 
-        // Both should have leaf_opt=1
-        // NOTE: Phase 5b removed the `leaf_opt` gate (see memory/compiler_optimizations.md);
-        // the comment marker "leaf_opt=1" is no longer emitted for non-leaf functions even
-        // when the underlying optimization is active. This is a stale indicator, not a
-        // missing optimization. Tracked as known until the marker is brought back or the
-        // assertion is rewritten to check the actual ASM shape.
-        if (!/compute_across_call.*leaf_opt=1/.test(r.asm)) {
-            knownBug(name, 'compute_across_call should have leaf_opt=1 (Phase 5b removed the gate; marker is stale)');
-            return;
+        // forward_with_work SHOULD get leaf_opt=1: its only call is in
+        // tail position (no values live across), so emit.c sets
+        // `leaf_opt = (fn->leaf || all_calls_are_tail(fn)) && !fn->dynalloc`
+        // to 1 — see compiler/qbe/w65816/emit.c near
+        // "leaf_opt = (fn->leaf || all_calls_are_tail(fn))".
+        //
+        // compute_across_call MUST NOT get leaf_opt=1: `sum` is live
+        // across the call to external_func (it's the return value), so
+        // `all_calls_are_tail(fn)` returns 0 and leaf_opt stays 0. The
+        // primary correctness invariant — that compute_across_call
+        // KEEPS its frame (sbc) — is already verified above; the
+        // leaf_opt assertion is a secondary diagnostic, only meaningful
+        // for the function where the optimization can apply.
+        //
+        // Was previously a [KNOWN_BUG] expecting leaf_opt=1 for
+        // compute_across_call as well, but that expectation contradicts
+        // the SSA liveness rules; the test claim was wrong, the compiler
+        // is correct. Rewritten 2026-05-09 (chantier A3 cleanup).
+        if (!/forward_with_work.*leaf_opt=1/.test(r.asm)) {
+            fail(name, 'forward_with_work missing leaf_opt=1 — Phase 5b regression (tail-only call should be optimised)');
+            failCount++;
         }
 
         if (failCount > 0) return;
@@ -1533,20 +1545,21 @@ export function runCompilerTests(opensnesDir, options = {}) {
 
         let failCount = 0;
 
-        // wrapper_one: tail call (jml), no rtl
-        // NOTE: tail call optimisation is not implemented in cc65816/QBE yet.
-        // All wrapper_* checks below depend on it. Treat as known until TCO lands.
+        // wrapper_one / wrapper_two / void_wrapper: tail call (jml),
+        // no rtl. TCO for trivial wrappers landed in chantier C.1
+        // (relaxed leaf_opt gate to non-leaf functions whose every
+        // Ocall is in tail position) — was originally [KNOWN_BUG],
+        // converted to hard-fail 2026-05-09 (chantier A3 cleanup).
+        // Any regression on these now surfaces immediately.
         let body = extractFuncBodyToEnds(r.asm, 'wrapper_one');
-        if (!/\tjml/.test(body)) { knownBug(name, 'wrapper_one missing jml (tail call optimisation not implemented)'); return; }
-        if (/rtl/.test(body)) { knownBug(name, 'wrapper_one still has rtl (tail call optimisation not implemented)'); return; }
+        if (!/\tjml/.test(body)) { fail(name, 'wrapper_one missing jml (tail call optimisation regressed)'); failCount++; }
+        if (/rtl/.test(body)) { fail(name, 'wrapper_one still has rtl (tail call optimisation regressed)'); failCount++; }
 
-        // wrapper_two: tail call (jml), no rtl
         body = extractFuncBodyToEnds(r.asm, 'wrapper_two');
-        if (!/\tjml/.test(body)) { knownBug(name, 'wrapper_two missing jml (tail call optimisation not implemented)'); return; }
+        if (!/\tjml/.test(body)) { fail(name, 'wrapper_two missing jml (tail call optimisation regressed)'); failCount++; }
 
-        // void_wrapper: tail call (jml)
         body = extractFuncBodyToEnds(r.asm, 'void_wrapper');
-        if (!/\tjml/.test(body)) { knownBug(name, 'void_wrapper missing jml (tail call optimisation not implemented)'); return; }
+        if (!/\tjml/.test(body)) { fail(name, 'void_wrapper missing jml (tail call optimisation regressed)'); failCount++; }
 
         // __mul16 cleanup test
         const mulSrc = join(BUILD, 'test_plx_mul.c');
@@ -1678,13 +1691,17 @@ export function runCompilerTests(opensnesDir, options = {}) {
         const r = tryCompile(name, src, out);
         if (!r) return;
 
-        // call_same_twice: 1 lda, 2 pha
-        // NOTE: A-cache currently invalidates at every call (per Phase 1 design).
-        // Extending it through pha for repeated arg pushes is a planned optimisation.
+        // call_same_twice: 1 lda, 2 pha — A-cache survives through
+        // consecutive pha (the second push doesn't re-load from
+        // stack). Originally [KNOWN_BUG] under "A-cache through pha
+        // not implemented"; the optimisation has shipped (verifiable
+        // by inspecting the emit pass — `acache_invalidate()` is
+        // NOT called between consecutive pha instructions).
+        // Converted to hard-fail 2026-05-09 (chantier A3 cleanup).
         let body = extractFuncBodyToEnds(r.asm, 'call_same_twice');
         const ldaCount = countMatches(body, /lda/g);
         if (ldaCount > 1) {
-            knownBug(name, `call_same_twice has ${ldaCount} lda instructions (A-cache through pha not implemented)`);
+            fail(name, `call_same_twice has ${ldaCount} lda instructions (A-cache through pha regressed)`);
             return;
         }
         const phaCount = countMatches(body, /pha/g);
@@ -1899,8 +1916,10 @@ export function runCompilerTests(opensnesDir, options = {}) {
         // Trivial wrapper (single tail call, args match). Handled by
         // chantier C.1 in qbe/w65816 (relaxed leaf_opt gate to non-leaf
         // functions whose every Ocall is in tail position).
+        // Originally [KNOWN_BUG]; converted to hard-fail 2026-05-09
+        // (chantier A3 cleanup) — TCO has landed.
         let body = extractFuncBodyToEnds(r.asm, 'call_add');
-        if (!/\tjml add_u16/.test(body)) { knownBug(name, "call_add missing 'jml add_u16' (tail call optimisation not implemented)"); return; }
+        if (!/\tjml add_u16/.test(body)) { fail(name, "call_add missing 'jml add_u16' (tail call optimisation regressed)"); return; }
         if (/\tjsl/.test(body)) { fail(name, 'call_add still has jsl (should be jml only)'); return; }
         if (/\trtl/.test(body)) { fail(name, 'call_add still has rtl (should be eliminated by tail call)'); return; }
 
@@ -1943,11 +1962,14 @@ export function runCompilerTests(opensnesDir, options = {}) {
             asm = r.asm;
         }
 
-        // call_add: pure tail call — NO rep #$20
-        // NOTE: depends on TCO (not implemented). When TCO lands, this should pass.
+        // call_add: pure tail call — NO rep #$20.
+        // Lazy rep emission: when a function only contains a tail
+        // call (no other 16-bit ops), the prologue's `rep #$20` is
+        // omitted. Depends on TCO. Originally [KNOWN_BUG];
+        // converted to hard-fail 2026-05-09 (chantier A3 cleanup).
         let body = extractFuncBodyToEnds(asm, 'call_add');
         if (/\trep #\$20/.test(body)) {
-            knownBug(name, 'call_add has rep #$20 (depends on tail call optimisation, not implemented)');
+            fail(name, 'call_add has rep #$20 (lazy rep emission regressed)');
             return;
         }
 
