@@ -883,6 +883,47 @@ export function runCompilerTests(opensnesDir, options = {}) {
         const out = join(BUILD, 'test_volatiles.c.asm');
         const r = tryCompile(name, src, out);
         if (!r) return;
+
+        let failCount = 0;
+
+        // Volatile semantics check (chantier A2, 2026-05-09): each
+        // access to a `volatile` variable must produce a fresh
+        // load/store. Pre-A2 the QBE loadopt pass coalesced redundant
+        // loads through value-numbering, silently violating the C
+        // standard for MMIO patterns. The fix tags volatile loads/
+        // stores at the IR level (`volat` keyword) so loadopt and
+        // promote skip them.
+
+        // test_volatile_read: 3 reads of hw_status, then write hw_data.
+        // Each `a = hw_status; b = hw_status; c = hw_status;` must
+        // produce its own load — no caching.
+        const readBody = extractFuncBodyToEnds(r.asm, 'test_volatile_read');
+        const reads = countMatches(readBody, /\blda\.w hw_status\b/g);
+        if (reads < 3) {
+            fail(name, `test_volatile_read coalesced volatile reads: expected ≥3 loads of hw_status, got ${reads} (volatile semantics violated)`);
+            failCount++;
+        }
+
+        // test_volatile_write: 4 writes of hw_data with literal values.
+        // Each must remain — none can be optimised away as redundant.
+        const writeBody = extractFuncBodyToEnds(r.asm, 'test_volatile_write');
+        const writes = countMatches(writeBody, /\bsta\.w hw_data\b/g);
+        if (writes < 4) {
+            fail(name, `test_volatile_write coalesced volatile stores: expected ≥4 stores of hw_data, got ${writes}`);
+            failCount++;
+        }
+
+        // test_read_modify_write: hw_status |= 0x80 then hw_status &= 0x7F.
+        // Each rmw is one load + one store; total = 2 loads + 2 stores.
+        const rmwBody = extractFuncBodyToEnds(r.asm, 'test_read_modify_write');
+        const rmwReads  = countMatches(rmwBody, /\blda\.w hw_status\b/g);
+        const rmwWrites = countMatches(rmwBody, /\bsta\.w hw_status\b/g);
+        if (rmwReads < 2 || rmwWrites < 2) {
+            fail(name, `test_read_modify_write volatile rmw counts wrong: reads=${rmwReads}/2, writes=${rmwWrites}/2`);
+            failCount++;
+        }
+
+        if (failCount > 0) return;
         pass(name);
     })();
 
