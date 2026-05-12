@@ -160,8 +160,12 @@ unsigned short compare_and_branch(unsigned short a, unsigned short b) {
     return 3;
 }
 
-/* --- 27. Call chain (non-leaf function overhead) --- */
-unsigned short helper(unsigned short x) {
+/* --- 27. Call chain (function inlining + non-leaf overhead) ---
+ * `helper` is `static inline` so a compiler with function-inlining
+ * support collapses `helper(helper(x))` into two add operations.
+ * tcc816 (PVSnesLib) ignores the keyword and emits both JSLs;
+ * cc65816 (OpenSNES, post-inline-chantier) inlines via heuristic. */
+static inline unsigned short helper(unsigned short x) {
     return x + 1;
 }
 unsigned short call_chain(unsigned short x) {
