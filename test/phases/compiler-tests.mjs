@@ -2124,6 +2124,48 @@ export function runCompilerTests(opensnesDir, options = {}) {
     })();
 
     // ================================================================
+    // Test 63: inline_boundaries (function inlining chantier)
+    // ================================================================
+    (function test_inline_boundaries() {
+        const name = 'inline_boundaries';
+        const src = join(SCRIPT_DIR, 'test_inline_boundaries.c');
+        const out = join(BUILD, 'test_inline_boundaries.c.asm');
+        const r = tryCompile(name, src, out);
+        if (!r) return;
+
+        // The eligible case: call_trivial must NOT contain `jml trivial` or
+        // `jsl trivial`. Its body should contain the inlined arithmetic.
+        const trivialBody = extractFuncBodyToEnds(r.asm, 'call_trivial');
+        if (/\bj(sl|ml)\s+trivial\b/.test(trivialBody)) {
+            fail(name, 'call_trivial still calls `trivial` (inline failed)');
+            return;
+        }
+        if (!/adc\.w\s+#42/.test(trivialBody)) {
+            fail(name, 'call_trivial body missing inlined `+ 42` arithmetic');
+            return;
+        }
+
+        // The non-eligible cases must still emit jml/jsl to the helper.
+        const nonEligible = {
+            call_no_kw: 'no_kw',
+            call_with_if: 'with_if',
+            call_with_nested: 'with_nested_call',
+            call_with_recursion: 'with_recursion',
+            call_too_big: 'too_big',
+        };
+        for (const [caller, callee] of Object.entries(nonEligible)) {
+            const body = extractFuncBodyToEnds(r.asm, caller);
+            const callRe = new RegExp(`\\bj(sl|ml)\\s+${escapeRegExp(callee)}\\b`);
+            if (!callRe.test(body)) {
+                fail(name,
+                    `${caller} unexpectedly INLINED ${callee} (should fall back to jsl/jml)`);
+                return;
+            }
+        }
+        pass(name);
+    })();
+
+    // ================================================================
     // Summary
     // ================================================================
 
