@@ -1014,13 +1014,25 @@ export function runCompilerTests(opensnesDir, options = {}) {
         if (!/pha/.test(u8Body)) { fail(name, 'set_scroll_u8 missing pha (no variable shift codegen)'); return; }
         if (!/asl/.test(u8Body)) { fail(name, 'set_scroll_u8 missing asl (shift dropped)'); return; }
 
-        // 2. Key check: after pha, lda N,s offset must be sta_offset + 2
+        // 2. Key check: after pha, lda N,s offset must be sta_offset + 2.
+        //
+        // The function emits TWO pha/pla pairs post-A6:
+        //   - One around the `scroll_x[bg] = x` array write (load-address-into-X
+        //     while temporarily preserving A through pha/pla).
+        //   - One around the `1 << bg` shift loop (preserve start value through
+        //     the count reload).
+        //
+        // We care about the second one — it's the one that historically had
+        // the off-by-2 stack-slot bug this test was written to catch. Match by
+        // its tail signature (`cpx #0 ; beq` introduces the shift loop) rather
+        // than by `pha`/`pla` order, so adding an extra pha pair upstream of
+        // the shift code doesn't break the test.
         const staMatches = u8Body.match(/sta (\d+),s/g);
         const bgStoreOffset = staMatches ? parseInt(staMatches[0].match(/sta (\d+),s/)[1]) : NaN;
 
-        const phaToPla = extractBetween(u8Body, /pha/, /pla/);
-        const ldaMatch = phaToPla.match(/lda (\d+),s/);
-        const shiftLoadOffset = ldaMatch ? parseInt(ldaMatch[1]) : NaN;
+        const shiftPattern = /pha\s+lda (\d+),s\s+tax\s+pla\s+cpx #0/;
+        const shiftMatch = u8Body.match(shiftPattern);
+        const shiftLoadOffset = shiftMatch ? parseInt(shiftMatch[1]) : NaN;
 
         if (isNaN(bgStoreOffset) || isNaN(shiftLoadOffset)) {
             fail(name, `Could not extract stack offsets (store=${bgStoreOffset}, load=${shiftLoadOffset})`);
@@ -1919,6 +1931,18 @@ export function runCompilerTests(opensnesDir, options = {}) {
     // ================================================================
     // Test 58: indirect_store_acache
     // ================================================================
+    // Pre-A6 this asserted that array_write(u16 *, u16, u16) compiled to a
+    // frameless leaf with no pha — the A-cache optimization could carry the
+    // value across the tax-index-and-store sequence. After chantier A6+A7
+    // (4-byte pointers, Kl-pair arithmetic), the indirect-store path needs
+    // multiple slots for the Kl-pair add and pha around tax becomes
+    // structurally necessary; the frameless leaf form is no longer
+    // reachable for this function shape. The test now verifies the core
+    // correctness property (indirect store emits `sta.l $0000,x` through
+    // tax) and leaves the framesize/pha assertions as informational
+    // pre-A6 history in the comment above. See
+    // `.claude/notes/chantiers/a6_a7_unified_audit.md` for the trade
+    // space discussion.
     (function test_indirect_store_acache() {
         const name = 'indirect_store_acache';
         const src = join(SCRIPT_DIR, 'test_indirect_store.c');
@@ -1926,18 +1950,13 @@ export function runCompilerTests(opensnesDir, options = {}) {
         const r = tryCompile(name, src, out);
         if (!r) return;
 
-        // array_write should be frameless (framesize=0)
-        if (!/array_write \(framesize=0/.test(r.asm)) {
-            fail(name, 'array_write not frameless (indirect store dead store not working)');
-            return;
-        }
         let body = extractFuncBodyToEnds(r.asm, 'array_write');
         if (!/\ttax/.test(body)) {
             fail(name, 'array_write missing tax instruction');
             return;
         }
-        if (/\tpha/.test(body)) {
-            fail(name, 'array_write still uses pha (A-cache optimization not applied)');
+        if (!/sta\.l \$0000,x/.test(body)) {
+            fail(name, 'array_write missing indirect-store via X');
             return;
         }
         pass(name);
