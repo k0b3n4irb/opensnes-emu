@@ -36,14 +36,24 @@ env vars (defaults assume `../../Mesen2` layout).
 
 ## Run
 
+All probes (serialized — each probe spawns its own mesen-rpc on the
+same TCP port, so they must run one at a time):
+
 ```sh
-node --test tools/opensnes-emu/test/functional/*.test.mjs
+cd tools/opensnes-emu
+npm run test:functional
 ```
 
-Single probe:
+Or directly with the Node test runner:
 
 ```sh
-node --test tools/opensnes-emu/test/functional/hdma.test.mjs
+node --test --test-concurrency=1 test/functional/*.test.mjs
+```
+
+Single probe (no concurrency flag needed for one file):
+
+```sh
+node --test test/functional/hdma.test.mjs
 ```
 
 The harness auto-spawns a fresh `mesen-rpc` on TCP port 9930 per run,

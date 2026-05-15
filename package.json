@@ -9,7 +9,8 @@
     "build": "npm run build:core && npm run build:ts",
     "start": "node dist/server/mcp-server.js",
     "dev:web": "vite web",
-    "clean": "make -C core clean && rm -rf dist"
+    "clean": "make -C core clean && rm -rf dist",
+    "test:functional": "node --test --test-concurrency=1 test/functional/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
